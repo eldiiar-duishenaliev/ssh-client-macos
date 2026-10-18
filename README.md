@@ -49,11 +49,18 @@ SSH/SFTP/tunnels use `libssh2`.
 ## Roadmap
 
 - **P0** Scaffold & toolchain ✅
-- **P1** SSH terminal core — auth, host-key verification, session tabs
+- **P1** SSH terminal core — auth, host-key verification, session tabs ✅
 - **P2** Connection tree, properties, quick connect, persistence, `confCons.xml` import
 - **P3** Keychain credentials, folder inheritance, SSH key manager
 - **P4** SFTP browser, port forwarding, jump hosts, logging, snippets
 - **P5** Polish, signing, tests
+
+## Usage
+
+Launch the app and press **⌘N** to open a connection. Enter host, port,
+username and pick an authentication method (password, private key, or
+ssh-agent). The host key is verified against `~/.ssh/known_hosts`; an unknown
+or changed key prompts before connecting.
 
 ## Command Line Tools notes
 
@@ -67,6 +74,12 @@ Building without Xcode works, with three caveats that the scripts handle:
    automatically when the directory exists.
 3. **`#Preview`** — the preview macro plugin ships only with Xcode, so preview
    blocks are omitted for now. Re-add them after installing Xcode.
+4. **SwiftUI `@State`** — in the Command Line Tools SDK 27.0, `@State` is
+   implemented as a macro whose plugin ships only with Xcode. Local view state
+   therefore lives in small `ObservableObject` view models (an ordinary MVVM
+   pattern) rather than `@State`. `@StateObject`, `@ObservedObject`,
+   `@Environment`, `@Published` and friends all work. Installing Xcode lifts
+   this limitation entirely.
 
 Also note: Homebrew's libssh2 bottle is built for a newer macOS than the
 package's 14.0 deployment target, which produces a linker warning. This is

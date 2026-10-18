@@ -1,45 +1,52 @@
 import SwiftUI
-import SSHCore
 
-/// Phase 0 shell: verifies the toolchain (libssh2 linked, SwiftTerm available)
-/// and lays out the sidebar + session area that later phases fill in.
 struct ContentView: View {
-    var body: some View {
-        NavigationSplitView {
-            SidebarPlaceholder()
-        } detail: {
-            DetailPlaceholder()
-        }
-    }
-}
+    @StateObject private var store = SessionStore()
 
-private struct SidebarPlaceholder: View {
     var body: some View {
-        List {
-            Section("Connections") {
-                Label("No connections yet", systemImage: "server.rack")
-                    .foregroundStyle(.secondary)
+        Group {
+            if store.sessions.isEmpty {
+                EmptyStateView { store.isConnectSheetPresented = true }
+            } else {
+                SessionTabsView(store: store)
             }
         }
-        .navigationTitle("Connections")
-        .frame(minWidth: 220)
+        .frame(minWidth: 760, maxWidth: .infinity, minHeight: 480, maxHeight: .infinity)
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    store.isConnectSheetPresented = true
+                } label: {
+                    Label("New Connection", systemImage: "plus")
+                }
+                .keyboardShortcut("n", modifiers: .command)
+                .help("New SSH connection (⌘N)")
+            }
+        }
+        .sheet(isPresented: $store.isConnectSheetPresented) {
+            ConnectSheet { request in
+                store.open(request)
+            }
+        }
     }
 }
 
-private struct DetailPlaceholder: View {
+private struct EmptyStateView: View {
+    let newConnection: () -> Void
+
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             Image(systemName: "terminal")
-                .font(.system(size: 48))
+                .font(.system(size: 52))
                 .foregroundStyle(.secondary)
-            Text("SSH client scaffold")
+            Text("No open sessions")
                 .font(.title2)
-            Text("libssh2 \(SSHCore.libssh2Version) linked")
+            Text("Open an SSH connection to get started.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
-            Text("Terminal sessions arrive in phase 1.")
-                .font(.footnote)
-                .foregroundStyle(.tertiary)
+            Button("New Connection…", action: newConnection)
+                .keyboardShortcut("n", modifiers: .command)
+                .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .textBackgroundColor))
