@@ -35,6 +35,17 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 
+# Development builds get their own bundle identifier. LaunchServices keys
+# applications off the bundle id, so two builds sharing one id show up as
+# duplicate apps, and `open` can resolve to the wrong copy. Release builds keep
+# the production identifier.
+if [[ "$CONFIG" != "release" ]]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.eldiiar.sshclientmac.dev" "$APP/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleName SSH Client (dev)" "$APP/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName SSH Client (dev)" "$APP/Contents/Info.plist"
+    echo "==> Development build: bundle id com.eldiiar.sshclientmac.dev"
+fi
+
 if [[ -f "$ROOT/Resources/AppIcon.icns" ]]; then
     cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 fi
