@@ -36,13 +36,6 @@ public final class TerminalBridge: NSObject, TerminalViewDelegate {
         window.makeFirstResponder(terminalView)
     }
 
-    /// Dimensions currently known to the terminal.
-    public var dimensions: (columns: Int, rows: Int)? {
-        guard let terminalView else { return nil }
-        let value = terminalView.terminalDimensions
-        return (value.cols, value.rows)
-    }
-
     // MARK: - TerminalViewDelegate
 
     public func send(source: TerminalView, data: ArraySlice<UInt8>) {

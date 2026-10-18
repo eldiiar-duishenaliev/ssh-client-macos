@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 import Foundation
 
@@ -59,6 +59,10 @@ let package = Package(
         .executable(name: "SSHClientMac", targets: ["SSHClientApp"])
     ],
     dependencies: [
+        // SwiftTerm 1.99 requires swift-tools-version 6.2. That is why this
+        // package declares 6.2 as well: with an older toolchain SwiftPM would
+        // not fail, it would quietly resolve an older SwiftTerm, and CI would
+        // then be building something different from local development.
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.2.0")
     ],
     targets: [
