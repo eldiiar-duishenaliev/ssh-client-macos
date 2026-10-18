@@ -6,9 +6,20 @@ import PackageDescription
 let brewPrefix = "/opt/homebrew"
 let libssh2Lib = "\(brewPrefix)/opt/libssh2/lib"
 
+// OpenSSL, used by the CCrypto shim (AES-GCM with arbitrary IV length, which
+// CommonCrypto does not provide). libssh2 already links against the same
+// openssl@4, so there is a single copy in the process.
+let openSSLInclude = "\(brewPrefix)/opt/openssl@4/include"
+let openSSLLib = "\(brewPrefix)/opt/openssl@4/lib"
+
 let sshLinker: [LinkerSetting] = [
     .unsafeFlags(["-L\(libssh2Lib)"]),
     .linkedLibrary("ssh2")
+]
+
+let cryptoLinker: [LinkerSetting] = [
+    .unsafeFlags(["-L\(openSSLLib)"]),
+    .linkedLibrary("crypto")
 ]
 
 let package = Package(
@@ -53,7 +64,20 @@ let package = Package(
 
         // Connection/folder models, inheritance, persistence, importers.
         .target(
-            name: "ConnectionStore"
+            name: "ConnectionStore",
+            dependencies: ["CredentialKit", "CCrypto"],
+            linkerSettings: cryptoLinker
+        ),
+
+        // C shim over OpenSSL for AES-GCM / PBKDF2 / MD5.
+        .target(
+            name: "CCrypto",
+            path: "Sources/CCrypto",
+            publicHeadersPath: "include",
+            cSettings: [
+                .unsafeFlags(["-I\(openSSLInclude)"])
+            ],
+            linkerSettings: cryptoLinker
         ),
 
         // Keychain-backed secret storage and SSH key management.
@@ -86,6 +110,12 @@ let package = Package(
         .testTarget(
             name: "SSHCoreTests",
             dependencies: ["SSHCore"]
+        ),
+
+        .testTarget(
+            name: "ConnectionStoreTests",
+            dependencies: ["ConnectionStore", "CredentialKit"],
+            resources: [.copy("Fixtures")]
         )
     ],
     swiftLanguageModes: [.v5]

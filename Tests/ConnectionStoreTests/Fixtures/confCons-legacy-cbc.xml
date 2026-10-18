@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" Export="False" EncryptionEngine="AES" FullFileEncryption="False" ConfVersion="2.5">
+  <Node Name="web-01" Type="Connection" Hostname="10.0.0.5" Username="deploy" Password="dmcWeEPiJK2+3yAZ2M9VrJgXdDhwEOvfq9UtB9JNTYE=" Protocol="SSH2" Port="2222" />
+</Connections>

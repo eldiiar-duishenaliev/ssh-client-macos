@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Connections Name="Connections" Export="False" EncryptionEngine="AES" BlockCipherMode="GCM" KdfIterations="1000" FullFileEncryption="False" Protected="TxVfUWqlnbNQyUTu1nM4POl59J/d3bLQzwzmyOos9tpQYXSm3/gV4bn4NeOtrh82X8GnRzPYvryf1lfwc2UIg6Mo" ConfVersion="2.6">
+  <Node Name="Production" Type="Container" Protocol="SSH2" Username="deploy" Port="2222" Description="prod hosts">
+  <Node Name="web-01" Type="Connection" Hostname="10.0.0.5" Username="deploy" Password="jkvg65OIF464TSAAB77a0QfCTglspjaC5yzcy5Jlv/fkTf/khwjYr1JC8+fxyPghNY1zZqva" Protocol="SSH2" Port="2222" />
+  <Node Name="db-01" Type="Connection" Hostname="10.0.0.6" Username="dbadmin" Password="XnsspJxZ5aH5a6JXn5e3drCm7Fnp5zmJ6WR4d1Rd0Je8O0m2BZPXZhID8lz4SRk7jVJKsTXxsylf9A==" Protocol="SSH2" />
+  </Node>
+  <Node Name="legacy-box" Type="Connection" Hostname="10.0.9.9" Username="root" Password="lGgvD7QaNrrxWK71HWdRRep8WopihOJE69CeMsCVykxmwtUkDAjJUzdntACFdTIeOr1mCkhIf9VS" Protocol="RDP" />
+</Connections>

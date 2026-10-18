@@ -1,0 +1,119 @@
+import Foundation
+
+/// Remote access protocol for a connection.
+///
+/// Only `ssh` is implemented; the rest exist so imported data round-trips and
+/// the model does not need to change when they are added.
+public enum ProtocolKind: String, Codable, CaseIterable, Sendable {
+    case ssh
+    case sftp
+    case rdp
+    case vnc
+    case telnet
+    case http
+    case raw
+
+    /// Conventional port for the protocol.
+    public var defaultPort: UInt16 {
+        switch self {
+        case .ssh, .sftp: return 22
+        case .rdp: return 3389
+        case .vnc: return 5900
+        case .telnet: return 23
+        case .http: return 80
+        case .raw: return 0
+        }
+    }
+}
+
+/// A node in the connection tree: either a folder or a connection.
+///
+/// Inheritable properties are optional; `nil` means "take the value from the
+/// nearest ancestor that sets one".
+public struct ConnectionNode: Identifiable, Codable, Equatable, Sendable {
+    public enum Kind: String, Codable, Sendable {
+        case folder
+        case connection
+    }
+
+    public var id: UUID
+    public var kind: Kind
+    public var name: String
+
+    // Inheritable properties.
+    public var host: String?
+    public var port: UInt16?
+    public var username: String?
+    public var protocolKind: ProtocolKind?
+    public var privateKeyPath: String?
+    /// Reference to a Keychain-stored secret. Added in phase 3.
+    public var credentialID: UUID?
+
+    // Presentation.
+    public var notes: String?
+    public var colorHex: String?
+    public var isExpanded: Bool
+
+    public var children: [ConnectionNode]
+
+    public init(
+        id: UUID = UUID(),
+        kind: Kind,
+        name: String,
+        host: String? = nil,
+        port: UInt16? = nil,
+        username: String? = nil,
+        protocolKind: ProtocolKind? = nil,
+        privateKeyPath: String? = nil,
+        credentialID: UUID? = nil,
+        notes: String? = nil,
+        colorHex: String? = nil,
+        isExpanded: Bool = true,
+        children: [ConnectionNode] = []
+    ) {
+        self.id = id
+        self.kind = kind
+        self.name = name
+        self.host = host
+        self.port = port
+        self.username = username
+        self.protocolKind = protocolKind
+        self.privateKeyPath = privateKeyPath
+        self.credentialID = credentialID
+        self.notes = notes
+        self.colorHex = colorHex
+        self.isExpanded = isExpanded
+        self.children = children
+    }
+
+    public var isFolder: Bool { kind == .folder }
+}
+
+/// A connection with all inherited values resolved.
+public struct ResolvedConnection: Equatable, Sendable {
+    public var name: String
+    public var host: String
+    public var port: UInt16
+    public var username: String
+    public var protocolKind: ProtocolKind
+    public var privateKeyPath: String?
+    public var credentialID: UUID?
+
+    public init(
+        name: String,
+        host: String,
+        port: UInt16,
+        username: String,
+        protocolKind: ProtocolKind,
+        privateKeyPath: String? = nil,
+        credentialID: UUID? = nil
+    ) {
+        self.name = name
+        self.host = host
+        self.port = port
+        self.username = username
+        self.protocolKind = protocolKind
+        self.privateKeyPath = privateKeyPath
+        self.credentialID = credentialID
+    }
+}
