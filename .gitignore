@@ -1,5 +1,39 @@
-# Object file
-*.o
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
 
-# Ada Library Information
-*.ali
+# Xcode
+build/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+*.xcuserstate
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Built app bundles
+dist/
+*.app
+
+# Local secrets / config
+*.local.json
+.env
+
+# Editor
+.vscode/
+.idea/
+
+# Agent / tooling
+.opencode/
+.memsearch/

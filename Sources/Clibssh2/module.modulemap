@@ -1,0 +1,5 @@
+module Clibssh2 [system] {
+    header "/opt/homebrew/opt/libssh2/include/libssh2.h"
+    header "/opt/homebrew/opt/libssh2/include/libssh2_sftp.h"
+    export *
+}
