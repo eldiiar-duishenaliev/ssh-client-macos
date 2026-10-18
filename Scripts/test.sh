@@ -7,6 +7,9 @@
 # plugin directory exists we point the compiler at it explicitly. Under a full
 # Xcode install this is unnecessary and the flag is skipped.
 #
+# Deliberately avoids arrays: macOS ships bash 3.2, where expanding an empty
+# array under `set -u` is an unbound-variable error.
+#
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,9 +19,11 @@ DEV_DIR="$(xcode-select -p)"
 PLUGIN_DIR="$DEV_DIR/usr/lib/swift/host/plugins/testing"
 PLUGIN_SERVER="$DEV_DIR/usr/bin/swift-plugin-server"
 
-EXTRA=()
 if [[ -d "$PLUGIN_DIR" && -x "$PLUGIN_SERVER" ]]; then
-    EXTRA=(-Xswiftc -external-plugin-path -Xswiftc "$PLUGIN_DIR#$PLUGIN_SERVER")
+    exec swift test \
+        -Xswiftc -external-plugin-path \
+        -Xswiftc "$PLUGIN_DIR#$PLUGIN_SERVER" \
+        "$@"
 fi
 
-exec swift test "${EXTRA[@]}" "$@"
+exec swift test "$@"
