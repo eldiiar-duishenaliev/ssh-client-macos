@@ -13,10 +13,12 @@ forwarding.
 
 - macOS 14 or later (developed on macOS 26)
 - Apple Silicon (Homebrew prefix `/opt/homebrew`)
-- Homebrew `libssh2`:
+- Homebrew packages:
   ```sh
-  brew install libssh2
+  brew install libssh2 openssl@4
   ```
+  (`libssh2` pulls in `openssl@4` automatically; it is listed because the
+  crypto shim links it directly.)
 - **Xcode** (recommended). SwiftUI previews, the `.xcodeproj`, and `XCTest`
   require a full Xcode install. The project also builds with Command Line
   Tools alone — see *Command Line Tools notes* below.
@@ -35,6 +37,7 @@ swift build                # plain SwiftPM build
 | Target | Responsibility |
 |---|---|
 | `Clibssh2` | `systemLibrary` modulemap over Homebrew's libssh2 |
+| `CCrypto` | C shim over OpenSSL (AES-GCM, PBKDF2, MD5) for the importer |
 | `SSHCore` | sessions, auth, known_hosts, PTY, channels |
 | `SFTPCore` | SFTP subsystem client |
 | `ForwardingKit` | `-L` / `-R` / `-D` forwarding, jump hosts |
@@ -50,17 +53,32 @@ SSH/SFTP/tunnels use `libssh2`.
 
 - **P0** Scaffold & toolchain ✅
 - **P1** SSH terminal core — auth, host-key verification, session tabs ✅
-- **P2** Connection tree, properties, quick connect, persistence, `confCons.xml` import
-- **P3** Keychain credentials, folder inheritance, SSH key manager
+- **P2** Connection tree, properties, quick connect, persistence, `confCons.xml` import ✅
+- **P3** Keychain credentials UI, folder inheritance editor, SSH key manager
 - **P4** SFTP browser, port forwarding, jump hosts, logging, snippets
 - **P5** Polish, signing, tests
 
 ## Usage
 
-Launch the app and press **⌘N** to open a connection. Enter host, port,
-username and pick an authentication method (password, private key, or
-ssh-agent). The host key is verified against `~/.ssh/known_hosts`; an unknown
-or changed key prompts before connecting.
+**Connections.** The left sidebar holds the connection tree. Right-click to add
+folders and connections, or to delete a node. Folder properties are inherited
+by their contents — set a username or port once on a folder and every
+connection beneath it picks it up, unless it overrides the value. Select a node
+and use the properties inspector (toolbar, right side) to edit it.
+
+Connection details are stored as JSON in
+`~/Library/Application Support/SSHClientMac/connections.json`. Passwords never
+go in that file; they live in the macOS Keychain.
+
+**Importing mRemoteNG.** Use the Import toolbar button and choose a
+`confCons.xml`. Modern (PBKDF2 + AES-GCM) and legacy (MD5 + AES-CBC) files are
+supported, as is full-file encryption. If the file has a master password you
+are prompted for it. Decrypted passwords are moved into the Keychain, so the
+imported connections can be opened directly.
+
+**Sessions.** Double-click a connection to open a terminal tab, or press **⌘N**
+to quick-connect to a host without saving it. Host keys are verified against
+`~/.ssh/known_hosts`; an unknown or changed key prompts before connecting.
 
 ## Command Line Tools notes
 
