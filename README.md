@@ -45,6 +45,49 @@ Supporting scripts: `Scripts/bundle.sh` assembles and ad-hoc signs the bundle,
 `Scripts/make-icon.sh` regenerates the app icon, and
 `Scripts/make-fixtures.py` regenerates the mRemoteNG test fixtures.
 
+## Code signing and the Keychain prompt
+
+`Scripts/bundle.sh` ad-hoc signs the app (`codesign --sign -`) by default. That
+is enough to launch it locally, but it has one consequence worth understanding:
+macOS binds Keychain access to an application's *designated requirement*, and
+for an ad-hoc signature that requirement is **the hash of that exact binary**:
+
+```console
+$ codesign -d -r- dist/SSHClientMac.app
+# designated => cdhash H"2e065483a72ba10f07df1df9e48a7daaba186de8"
+```
+
+So every rebuild is, as far as the Keychain is concerned, a *different
+application*. Items written by one build are not trusted by the next, macOS asks
+for permission again, and **"Always Allow" cannot help** — it records the
+requirement of the build that is about to be replaced.
+
+There is no way around this except a stable signing identity. (Switching to the
+modern data-protection keychain, which has no interactive ACLs, is not an
+option either: it refuses to serve an ad-hoc signed app at all, with
+`errSecMissingEntitlement`, −34018.)
+
+A **downloaded release is a fixed binary**, so its Keychain items stay trusted
+across launches. The repeated prompts only affect local development, where the
+app is rebuilt between runs.
+
+To fix it, sign with a certificate instead of `-`:
+
+```sh
+# Self-signed certificate (free, fine for personal use).
+# Keychain Access → Certificate Assistant → Create a Certificate…
+#   name "SSH Client Dev", Self Signed Root, certificate type: Code Signing
+CODESIGN_IDENTITY="SSH Client Dev" Scripts/package.sh 0.1.0
+
+# Developer ID Application certificate (needed to distribute).
+CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" Scripts/package.sh 0.1.0
+```
+
+Any non-ad-hoc identity also enables the hardened runtime and a secure
+timestamp, which is what notarization requires. In CI, set a
+`CODESIGN_IDENTITY` repository secret and the release workflow uses it
+automatically.
+
 ## Architecture
 
 | Target | Responsibility |

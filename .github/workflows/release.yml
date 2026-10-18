@@ -41,6 +41,11 @@ jobs:
           echo "Building version $VERSION"
 
       - name: Package
+        env:
+          # Optional. When the repository has this secret set, the app is
+          # signed with a stable identity instead of ad-hoc, which stops macOS
+          # re-prompting for Keychain access after every rebuild.
+          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
         run: Scripts/package.sh "${{ steps.version.outputs.value }}"
 
       - name: Write release notes

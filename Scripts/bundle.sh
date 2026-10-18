@@ -47,15 +47,34 @@ if [[ -n "${VERSION:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
 fi
 
-# Ad-hoc sign so the app launches cleanly on this machine.
+# Sign the bundle. Ad-hoc by default, which is enough to launch locally but
+# gives the app no stable identity: macOS records an ad-hoc app's designated
+# requirement as the hash of that exact binary, so every rebuild looks like a
+# different application to the Keychain, and stored secrets have to be
+# re-authorised. Set CODESIGN_IDENTITY to a certificate (self-signed or
+# Developer ID) for a stable identity.
+#
 # Note: --deep is deprecated and throws on recent macOS; the bundle has no
 # nested code, so a plain signature is sufficient.
-echo "==> Ad-hoc signing"
-codesign --force --sign - \
-    --entitlements "$ROOT/Resources/$APP_NAME.entitlements" \
-    "$APP"
+IDENTITY="${CODESIGN_IDENTITY:--}"
+
+if [[ "$IDENTITY" == "-" ]]; then
+    echo "==> Ad-hoc signing (no stable identity; see README on Keychain prompts)"
+    codesign --force --sign - \
+        --entitlements "$ROOT/Resources/$APP_NAME.entitlements" \
+        "$APP"
+else
+    echo "==> Signing with: $IDENTITY"
+    codesign --force \
+        --options runtime \
+        --timestamp \
+        --sign "$IDENTITY" \
+        --entitlements "$ROOT/Resources/$APP_NAME.entitlements" \
+        "$APP"
+fi
 
 codesign --verify --verbose=2 "$APP"
+echo "    designated requirement: $(codesign -d -r- "$APP" 2>&1 | grep -i designated | head -1)"
 
 echo "==> Done: $APP"
 echo "    open \"$APP\""
