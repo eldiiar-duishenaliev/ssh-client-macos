@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install native dependencies
+        run: Scripts/setup-deps.sh
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: Scripts/test.sh
+
+      - name: Assemble app bundle
+        run: Scripts/bundle.sh release
+
+      # The SSH tests start throwaway sshd instances and connect through them,
+      # so a green run exercises real handshakes, tunnelling and key auth.
+      - name: Summarise
+        run: |
+          APP="dist/SSHClientMac.app"
+          echo "### App bundle" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          codesign -dv "$APP" 2>&1 | head -5 >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Non-system dependencies:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          otool -L "$APP/Contents/MacOS/SSHClientMac" \
+            | grep -vE '^\s+/usr/lib|^\s+/System' | tail -n +2 >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

@@ -39,6 +39,14 @@ if [[ -f "$ROOT/Resources/AppIcon.icns" ]]; then
     cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 fi
 
+# Stamp a version into the bundle when one is supplied, so releases report the
+# tag they were built from rather than the placeholder in Info.plist.
+if [[ -n "${VERSION:-}" ]]; then
+    echo "==> Version $VERSION"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
+fi
+
 # Ad-hoc sign so the app launches cleanly on this machine.
 # Note: --deep is deprecated and throws on recent macOS; the bundle has no
 # nested code, so a plain signature is sufficient.

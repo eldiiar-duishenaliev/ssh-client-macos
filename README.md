@@ -1,38 +1,49 @@
 # SSH Client for macOS
 
+[![CI](https://github.com/eldiiar-duishenaliev/ssh-client-macos/actions/workflows/ci.yml/badge.svg)](https://github.com/eldiiar-duishenaliev/ssh-client-macos/actions/workflows/ci.yml)
+
 A native macOS remote-connection manager in the spirit of
 [mRemoteNG](https://github.com/mRemoteNG/mRemoteNG): a connection tree with
-folders, tabbed sessions, credentials in the Keychain, SFTP, and port
-forwarding.
+folder inheritance, tabbed SSH terminals, ProxyJump bastion support, Keychain
+credentials, and `confCons.xml` import.
 
-> Status: **Phase 0 (scaffold) complete.** The toolchain builds, links
-> libssh2, passes tests, and produces a launchable `.app`. SSH sessions arrive
-> in phase 1.
+> Status: SSH sessions, the connection manager, mRemoteNG import, jump hosts and
+> key passphrases are implemented and covered by tests. SFTP and explicit
+> `-L` / `-R` / `-D` forwarding are still to come — see the roadmap.
 
-## Requirements
+## Install
 
-- macOS 14 or later (developed on macOS 26)
-- Apple Silicon (Homebrew prefix `/opt/homebrew`)
-- Homebrew packages:
-  ```sh
-  brew install libssh2 openssl@4
-  ```
-  (`libssh2` pulls in `openssl@4` automatically; it is listed because the
-  crypto shim links it directly.)
-- **Xcode** (recommended). SwiftUI previews, the `.xcodeproj`, and `XCTest`
-  require a full Xcode install. The project also builds with Command Line
-  Tools alone — see *Command Line Tools notes* below.
+Download the latest `SSHClientMac-*.zip` (or `.dmg`) from
+[Releases](https://github.com/eldiiar-duishenaliev/ssh-client-macos/releases).
 
-## Build, test, run
+The build is ad-hoc signed rather than notarized, so the first launch is blocked
+with *"cannot be opened because the developer cannot be verified"*. Right-click
+the app and choose **Open**, or clear the quarantine flag:
 
 ```sh
-Scripts/bundle.sh          # build + assemble + ad-hoc sign dist/SSHClientMac.app
-Scripts/run.sh             # bundle and launch
-Scripts/test.sh            # run the test suite
-Scripts/make-icon.sh       # regenerate Resources/AppIcon.icns
-Scripts/make-fixtures.py   # regenerate the mRemoteNG test fixtures
-swift build                # plain SwiftPM build
+xattr -dr com.apple.quarantine /Applications/SSHClientMac.app
 ```
+
+Requirements: **Apple Silicon**, **macOS 14 or later**. Nothing else — libssh2
+and OpenSSL are linked into the binary, so no Homebrew install is needed to run
+it.
+
+## Building
+
+Requires macOS 14+, Apple Silicon, [Homebrew](https://brew.sh), and a Swift 6
+toolchain (Xcode 16+, or Command Line Tools — see the notes below).
+
+```sh
+Scripts/setup-deps.sh      # install libssh2 and pin the matching OpenSSL
+swift build                # build
+Scripts/test.sh            # run the test suite
+Scripts/run.sh             # assemble and launch dist/SSHClientMac.app
+Scripts/package.sh 0.2.0   # build release .zip and .dmg into dist/
+```
+
+Supporting scripts: `Scripts/bundle.sh` assembles and ad-hoc signs the bundle,
+`Scripts/make-icon.sh` regenerates the app icon, and
+`Scripts/make-fixtures.py` regenerates the mRemoteNG test fixtures.
 
 ## Architecture
 
@@ -49,17 +60,38 @@ swift build                # plain SwiftPM build
 | `SSHClientApp` | SwiftUI application shell |
 
 Terminal emulation uses [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm).
-SSH/SFTP/tunnels use `libssh2`.
+SSH/SFTP/tunnels use `libssh2`, linked statically along with OpenSSL so the
+packaged app has no Homebrew dependency.
+
+## Continuous integration and releases
+
+`.github/workflows/ci.yml` builds and tests on every push to `main` and every
+pull request. The test suite is not a mock: it starts throwaway `sshd`
+instances and connects to them, so a green run covers real handshakes,
+key-based auth, host-key verification, ProxyJump tunnelling and passphrase
+unlocking.
+
+`.github/workflows/release.yml` runs on a `v*` tag (or manually via
+*Run workflow*). It re-runs the tests, then packages the release `.zip` and
+`.dmg` and publishes them to a GitHub Release, with checksums appended to the
+release notes.
+
+To cut a release:
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
 
 ## Roadmap
 
 - **P0** Scaffold & toolchain ✅
 - **P1** SSH terminal core — auth, host-key verification, session tabs ✅
 - **P2** Connection tree, properties, quick connect, persistence, `confCons.xml` import ✅
-- **P3** Jump hosts (`ProxyJump`) ✅ · app icon ✅
-- **P4** Keychain credential UI, SSH key manager
+- **P3** Jump hosts (`ProxyJump`) ✅ · key passphrases ✅ · app icon ✅
+- **P4** CI, automated releases, self-contained builds ✅
 - **P5** SFTP browser, `-L` / `-R` / `-D` forwarding
-- **P6** Polish, signing, release
+- **P6** Credentials UI for passwords, SSH key manager, notarized builds
 
 ## Usage
 
@@ -117,9 +149,12 @@ arc and two nodes above it standing for reaching a host through a bastion.
 
 Building without Xcode works, with three caveats that the scripts handle:
 
-1. **`libssh2` header path** — the `Clibssh2` system-library modulemap points at
-   `/opt/homebrew/opt/libssh2/include`. Homebrew's libssh2 is built against
-   `openssl@4`, whose dylibs must be present.
+1. **Native dependency paths** — the `Clibssh2` system-library modulemap points
+   at Homebrew's headers by absolute path, because a system-library target
+   cannot inherit include flags from its dependents. `Scripts/setup-deps.sh`
+   writes the correct paths and pins `OPENSSL_PREFIX` to the OpenSSL that
+   libssh2 was itself built against, so the crypto shim cannot pull in a second
+   copy.
 2. **Swift Testing macros** — SwiftPM does not add the testing macro plugin
    path under CLT. `Scripts/test.sh` passes `-external-plugin-path`
    automatically when the directory exists.
@@ -132,6 +167,7 @@ Building without Xcode works, with three caveats that the scripts handle:
    `@Environment`, `@Published` and friends all work. Installing Xcode lifts
    this limitation entirely.
 
-Also note: Homebrew's libssh2 bottle is built for a newer macOS than the
-package's 14.0 deployment target, which produces a linker warning. This is
-harmless on this machine.
+Also note: Homebrew's libssh2 archive is built for a newer macOS than the
+package's 14.0 deployment target, which produces linker warnings during the
+build. They are harmless — the linked code paths we use are all older than the
+deployment target.

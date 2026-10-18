@@ -1,25 +1,53 @@
 // swift-tools-version: 6.0
 import PackageDescription
+import Foundation
 
-// Homebrew (Apple Silicon) location of libssh2. The headers are referenced by
-// the Clibssh2 system-library modulemap; this is only used for linking.
-let brewPrefix = "/opt/homebrew"
-let libssh2Lib = "\(brewPrefix)/opt/libssh2/lib"
+// Homebrew prefix for this architecture: /opt/homebrew on Apple Silicon,
+// /usr/local on Intel.
+let brewPrefix = FileManager.default.fileExists(atPath: "/opt/homebrew/opt")
+    ? "/opt/homebrew"
+    : "/usr/local"
 
-// OpenSSL, used by the CCrypto shim (AES-GCM with arbitrary IV length, which
-// CommonCrypto does not provide). libssh2 already links against the same
-// openssl@4, so there is a single copy in the process.
-let openSSLInclude = "\(brewPrefix)/opt/openssl@4/include"
-let openSSLLib = "\(brewPrefix)/opt/openssl@4/lib"
+// MARK: - libssh2
 
-let sshLinker: [LinkerSetting] = [
-    .unsafeFlags(["-L\(libssh2Lib)"]),
-    .linkedLibrary("ssh2")
-]
+let libssh2Prefix = "\(brewPrefix)/opt/libssh2"
+let libssh2Lib = "\(libssh2Prefix)/lib"
 
-let cryptoLinker: [LinkerSetting] = [
-    .unsafeFlags(["-L\(openSSLLib)"]),
-    .linkedLibrary("crypto")
+// MARK: - OpenSSL
+
+// The CCrypto shim needs AES-GCM with an arbitrary IV length, which CommonCrypto
+// does not offer, so it uses OpenSSL. It must be the *same* OpenSSL that libssh2
+// was built against, or two copies end up in the process. CI pins
+// OPENSSL_PREFIX from libssh2's own linkage; see Scripts/setup-deps.sh.
+let openSSLPrefix: String = {
+    if let override = ProcessInfo.processInfo.environment["OPENSSL_PREFIX"], !override.isEmpty {
+        return override
+    }
+    for name in ["openssl@4", "openssl@3", "openssl"] {
+        let prefix = "\(brewPrefix)/opt/\(name)"
+        if FileManager.default.fileExists(atPath: "\(prefix)/include/openssl/evp.h") {
+            return prefix
+        }
+    }
+    return "\(brewPrefix)/opt/openssl"
+}()
+let openSSLLib = "\(openSSLPrefix)/lib"
+
+// MARK: - Linking
+
+// Static archives rather than dylibs, so a packaged app runs on a machine with
+// no Homebrew installed. Because the archives are static, every transitive
+// dependency has to be listed explicitly — a dylib would have carried its own
+// dependencies. Order matters: the linker resolves left to right, so providers
+// come after consumers. zlib is the one remaining dependency, and macOS ships
+// it in /usr/lib.
+let nativeLinker: [LinkerSetting] = [
+    .unsafeFlags([
+        "\(libssh2Lib)/libssh2.a",
+        "\(openSSLLib)/libssl.a",
+        "\(openSSLLib)/libcrypto.a",
+        "-lz"
+    ])
 ]
 
 let package = Package(
@@ -41,32 +69,37 @@ let package = Package(
             providers: [.brew(["libssh2"])]
         ),
 
-        // SSH transport: sessions, auth, known_hosts, PTY, channels.
+        // SSH transport: sessions, auth, known_hosts, PTY, channels, jump hosts.
         .target(
             name: "SSHCore",
             dependencies: ["Clibssh2"],
-            linkerSettings: sshLinker
+            linkerSettings: nativeLinker
         ),
 
         // SFTP subsystem client.
         .target(
             name: "SFTPCore",
             dependencies: ["Clibssh2", "SSHCore"],
-            linkerSettings: sshLinker
+            linkerSettings: nativeLinker
         ),
 
-        // Port forwarding (-L/-R/-D) and jump hosts.
+        // Port forwarding (-L/-R/-D).
         .target(
             name: "ForwardingKit",
             dependencies: ["Clibssh2", "SSHCore"],
-            linkerSettings: sshLinker
+            linkerSettings: nativeLinker
         ),
 
         // Connection/folder models, inheritance, persistence, importers.
         .target(
             name: "ConnectionStore",
             dependencies: ["CredentialKit", "CCrypto"],
-            linkerSettings: cryptoLinker
+            linkerSettings: nativeLinker
+        ),
+
+        // Keychain-backed secret storage and SSH key management.
+        .target(
+            name: "CredentialKit"
         ),
 
         // C shim over OpenSSL for AES-GCM / PBKDF2 / MD5.
@@ -75,14 +108,9 @@ let package = Package(
             path: "Sources/CCrypto",
             publicHeadersPath: "include",
             cSettings: [
-                .unsafeFlags(["-I\(openSSLInclude)"])
+                .unsafeFlags(["-I\(openSSLPrefix)/include"])
             ],
-            linkerSettings: cryptoLinker
-        ),
-
-        // Keychain-backed secret storage and SSH key management.
-        .target(
-            name: "CredentialKit"
+            linkerSettings: nativeLinker
         ),
 
         // SwiftTerm bridge: terminal view, keymaps, themes.
@@ -104,7 +132,7 @@ let package = Package(
                 "CredentialKit",
                 "TerminalKit"
             ],
-            linkerSettings: sshLinker
+            linkerSettings: nativeLinker
         ),
 
         .testTarget(

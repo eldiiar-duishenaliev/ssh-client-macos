@@ -1,0 +1,106 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build, without the leading v (e.g. 0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install native dependencies
+        run: Scripts/setup-deps.sh
+
+      - name: Test
+        run: Scripts/test.sh
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${{ github.ref_name }}"
+          fi
+          VERSION="${VERSION#v}"
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building version $VERSION"
+
+      - name: Package
+        run: Scripts/package.sh "${{ steps.version.outputs.value }}"
+
+      - name: Write release notes
+        run: |
+          VERSION="${{ steps.version.outputs.value }}"
+          {
+            cat <<'NOTES'
+          Native macOS SSH client: a connection tree with folder inheritance,
+          tabbed terminals, ProxyJump bastion support, jump-key passphrases in
+          the Keychain, and mRemoteNG `confCons.xml` import.
+
+          ### Install
+
+          1. Download `SSHClientMac-VERSION.zip`, or mount the `.dmg`.
+          2. Move **SSHClientMac.app** into Applications.
+
+          Nothing else is needed: libssh2 and OpenSSL are linked into the
+          binary, so there is no Homebrew or runtime dependency.
+
+          ### First launch
+
+          The build is ad-hoc signed and not notarized, so macOS will refuse the
+          first launch with *"cannot be opened because the developer cannot be
+          verified"*.
+
+          Right-click the app, choose **Open**, and confirm. Or clear the
+          quarantine flag:
+
+          ```sh
+          xattr -dr com.apple.quarantine /Applications/SSHClientMac.app
+          ```
+
+          ### Requirements
+
+          - Apple Silicon (arm64)
+          - macOS 14 or later
+
+          ### Checksums
+          NOTES
+            echo '```'
+            ( cd dist && shasum -a 256 ./*.zip ./*.dmg )
+            echo '```'
+          } > "$RUNNER_TEMP/notes.md"
+
+          # The placeholder above keeps the heredoc readable; substitute the tag.
+          sed -i '' "s/VERSION/$VERSION/g" "$RUNNER_TEMP/notes.md"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.version.outputs.value }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "==> Updating existing release $TAG"
+            gh release upload "$TAG" dist/*.zip dist/*.dmg --clobber
+          else
+            echo "==> Creating release $TAG"
+            gh release create "$TAG" \
+              --title "SSH Client ${{ steps.version.outputs.value }}" \
+              --target "${{ github.sha }}" \
+              --notes-file "$RUNNER_TEMP/notes.md" \
+              dist/*.zip dist/*.dmg
+          fi
