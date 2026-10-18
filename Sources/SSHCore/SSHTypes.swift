@@ -40,6 +40,32 @@ public struct SSHAuthMethod: Equatable {
     }
 }
 
+/// A bastion host that a connection is tunnelled through.
+public struct SSHJumpConfiguration {
+    public var host: String
+    public var port: UInt16
+    public var username: String
+    public var auth: SSHAuthMethod
+    public var knownHostsPath: String?
+    public var connectTimeout: TimeInterval
+
+    public init(
+        host: String,
+        port: UInt16 = 22,
+        username: String,
+        auth: SSHAuthMethod,
+        knownHostsPath: String? = nil,
+        connectTimeout: TimeInterval = 15
+    ) {
+        self.host = host
+        self.port = port
+        self.username = username
+        self.auth = auth
+        self.knownHostsPath = knownHostsPath
+        self.connectTimeout = connectTimeout
+    }
+}
+
 /// Everything needed to open a session.
 public struct SSHConfiguration {
     public var host: String
@@ -52,6 +78,8 @@ public struct SSHConfiguration {
     public var connectTimeout: TimeInterval
     /// Path to an OpenSSH `known_hosts` file. Defaults to `~/.ssh/known_hosts`.
     public var knownHostsPath: String?
+    /// When set, the connection is tunnelled through this bastion.
+    public var jump: SSHJumpConfiguration?
 
     public init(
         host: String,
@@ -62,7 +90,8 @@ public struct SSHConfiguration {
         columns: Int = 80,
         rows: Int = 24,
         connectTimeout: TimeInterval = 15,
-        knownHostsPath: String? = nil
+        knownHostsPath: String? = nil,
+        jump: SSHJumpConfiguration? = nil
     ) {
         self.host = host
         self.port = port
@@ -73,6 +102,7 @@ public struct SSHConfiguration {
         self.rows = rows
         self.connectTimeout = connectTimeout
         self.knownHostsPath = knownHostsPath
+        self.jump = jump
     }
 }
 

@@ -54,6 +54,13 @@ public struct ConnectionTree: Codable, Equatable, Sendable {
         var protocolKind: ProtocolKind?
         var privateKeyPath: String?
         var credentialID: UUID?
+        var keyPassphraseID: UUID?
+        var jumpHost: String?
+        var jumpPort: UInt16?
+        var jumpUsername: String?
+        var jumpPrivateKeyPath: String?
+        var jumpCredentialID: UUID?
+        var jumpKeyPassphraseID: UUID?
 
         for node in path {
             if let value = node.host, !value.isEmpty { host = value }
@@ -62,19 +69,43 @@ public struct ConnectionTree: Codable, Equatable, Sendable {
             if let value = node.protocolKind { protocolKind = value }
             if let value = node.privateKeyPath, !value.isEmpty { privateKeyPath = value }
             if let value = node.credentialID { credentialID = value }
+            if let value = node.keyPassphraseID { keyPassphraseID = value }
+            if let value = node.jumpHost, !value.isEmpty { jumpHost = value }
+            if let value = node.jumpPort { jumpPort = value }
+            if let value = node.jumpUsername, !value.isEmpty { jumpUsername = value }
+            if let value = node.jumpPrivateKeyPath, !value.isEmpty { jumpPrivateKeyPath = value }
+            if let value = node.jumpCredentialID { jumpCredentialID = value }
+            if let value = node.jumpKeyPassphraseID { jumpKeyPassphraseID = value }
         }
 
         guard let host, !host.isEmpty else { return nil }
         let resolvedProtocol = protocolKind ?? .ssh
+        let resolvedUsername = username ?? NSUserName()
+
+        // A jump host defaults its user to the connection's user and its port
+        // to 22, which matches the common `-J user@bastion` case.
+        var jump: ResolvedJump?
+        if let jumpHost, !jumpHost.isEmpty {
+            jump = ResolvedJump(
+                host: jumpHost,
+                port: jumpPort ?? 22,
+                username: jumpUsername ?? resolvedUsername,
+                privateKeyPath: jumpPrivateKeyPath,
+                credentialID: jumpCredentialID,
+                keyPassphraseID: jumpKeyPassphraseID
+            )
+        }
 
         return ResolvedConnection(
             name: leaf.name,
             host: host,
             port: port ?? resolvedProtocol.defaultPort,
-            username: username ?? NSUserName(),
+            username: resolvedUsername,
             protocolKind: resolvedProtocol,
             privateKeyPath: privateKeyPath,
-            credentialID: credentialID
+            credentialID: credentialID,
+            keyPassphraseID: keyPassphraseID,
+            jump: jump
         )
     }
 
@@ -123,6 +154,21 @@ public struct ConnectionTree: Codable, Equatable, Sendable {
     }
 
     // MARK: - Recursive helpers
+
+    /// Returns a copy of the tree with fresh node identifiers.
+    ///
+    /// Used when merging an imported tree so its ids cannot collide with
+    /// existing nodes. `credentialID` values are deliberately preserved, since
+    /// they point at Keychain items.
+    public func regeneratedIDs() -> ConnectionTree {
+        func convert(_ node: ConnectionNode) -> ConnectionNode {
+            var copy = node
+            copy.id = UUID()
+            copy.children = node.children.map(convert)
+            return copy
+        }
+        return ConnectionTree(version: version, roots: roots.map(convert))
+    }
 
     private static func find(_ id: UUID, in nodes: [ConnectionNode]) -> ConnectionNode? {
         for node in nodes {

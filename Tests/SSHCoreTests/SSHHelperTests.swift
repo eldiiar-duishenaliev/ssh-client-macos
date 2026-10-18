@@ -7,7 +7,7 @@ struct SSHHelperTests {
     @Test("SHA256 fingerprint matches the OpenSSH format")
     func fingerprintFormat() {
         // SHA-256 of an empty blob, base64 without padding.
-        #expect(SSHSession.fingerprint(for: Data()) == "SHA256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU")
+        #expect(HostKeyVerifier.fingerprint(for: Data()) == "SHA256:47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU")
     }
 
     @Test("key algorithm name is parsed from the blob header")
@@ -22,11 +22,19 @@ struct SSHHelperTests {
         blob.append(contentsOf: name.utf8)
         blob.append(contentsOf: [UInt8](repeating: 0, count: 32))
 
-        #expect(SSHSession.keyAlgorithmName(for: blob) == "ssh-ed25519")
+        #expect(HostKeyVerifier.keyAlgorithmName(for: blob) == "ssh-ed25519")
     }
 
     @Test("a truncated blob yields no algorithm name")
     func truncatedBlob() {
-        #expect(SSHSession.keyAlgorithmName(for: Data([0x00, 0x00])) == nil)
+        #expect(HostKeyVerifier.keyAlgorithmName(for: Data([0x00, 0x00])) == nil)
+    }
+
+    @Test("known_hosts path defaults to the user's ssh directory")
+    func defaultKnownHostsPath() {
+        let path = HostKeyVerifier.resolvedKnownHostsPath(nil)
+        #expect(path?.hasSuffix("/.ssh/known_hosts") == true)
+        #expect(HostKeyVerifier.resolvedKnownHostsPath("/tmp/custom") == "/tmp/custom")
     }
 }
+

@@ -45,7 +45,8 @@ final class SessionController: ObservableObject, Identifiable {
             columns: 80,
             rows: 24,
             connectTimeout: 15,
-            knownHostsPath: nil
+            knownHostsPath: nil,
+            jump: request.jump
         )
 
         let session = SSHSession(

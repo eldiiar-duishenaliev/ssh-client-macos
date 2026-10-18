@@ -22,6 +22,19 @@ final class SessionProbe {
         lock.lock(); self.error = error; lock.unlock()
     }
 
+    /// The most recent state reported.
+    func currentState() -> SSHSession.State? {
+        lock.lock(); defer { lock.unlock() }
+        return states.last
+    }
+
+    /// Whether any observed state satisfies `predicate`. Useful for terminal
+    /// states that carry an associated value.
+    func hasState(where predicate: (SSHSession.State) -> Bool) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return states.contains(where: predicate)
+    }
+
     func waitForState(_ target: SSHSession.State, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {

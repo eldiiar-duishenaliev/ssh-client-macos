@@ -47,6 +47,8 @@ enum SSHSocket {
             _ = fcntl(fd, F_SETFL, flags)
             var one: Int32 = 1
             setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, socklen_t(MemoryLayout<Int32>.size))
+            // A write to a closed peer must fail, not raise SIGPIPE.
+            setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
             return fd
         }
 

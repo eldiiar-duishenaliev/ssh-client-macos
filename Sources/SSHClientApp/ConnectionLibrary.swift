@@ -88,23 +88,24 @@ final class ConnectionLibrary: ObservableObject {
     }
 
     /// Builds a session request from a stored connection, preferring a
-    /// Keychain password, then a private key, then ssh-agent.
+    /// Keychain password, then a private key, then ssh-agent. The jump host,
+    /// when present, resolves its own credentials the same way.
     func makeRequest(for id: UUID) -> ConnectionRequest? {
         guard let resolved = tree.resolve(id: id) else { return nil }
 
-        let auth: SSHAuthMethod
-        if let credentialID = resolved.credentialID,
-           let secret = secrets.secret(for: credentialID),
-           !secret.isEmpty {
-            auth = SSHAuthMethod(kind: .password(secret))
-        } else if let keyPath = resolved.privateKeyPath, !keyPath.isEmpty {
-            auth = SSHAuthMethod(kind: .privateKey(
-                privateKeyPath: NSString(string: keyPath).expandingTildeInPath,
-                publicKeyPath: nil,
-                passphrase: nil
-            ))
-        } else {
-            auth = SSHAuthMethod(kind: .agent)
+        let jump = resolved.jump.map { jump in
+            SSHJumpConfiguration(
+                host: jump.host,
+                port: jump.port,
+                username: jump.username,
+                auth: authMethod(
+                    privateKeyPath: jump.privateKeyPath,
+                    credentialID: jump.credentialID,
+                    passphraseID: jump.keyPassphraseID
+                ),
+                knownHostsPath: nil,
+                connectTimeout: 15
+            )
         }
 
         return ConnectionRequest(
@@ -112,8 +113,88 @@ final class ConnectionLibrary: ObservableObject {
             host: resolved.host,
             port: resolved.port,
             username: resolved.username,
-            auth: auth
+            auth: authMethod(
+                privateKeyPath: resolved.privateKeyPath,
+                credentialID: resolved.credentialID,
+                passphraseID: resolved.keyPassphraseID
+            ),
+            jump: jump
         )
+    }
+
+    /// Chooses an authentication method from the available credentials.
+    private func authMethod(privateKeyPath: String?, credentialID: UUID?, passphraseID: UUID?) -> SSHAuthMethod {
+        if let credentialID,
+           let secret = secrets.secret(for: credentialID),
+           !secret.isEmpty {
+            return SSHAuthMethod(kind: .password(secret))
+        }
+        if let privateKeyPath, !privateKeyPath.isEmpty {
+            return SSHAuthMethod(kind: .privateKey(
+                privateKeyPath: NSString(string: privateKeyPath).expandingTildeInPath,
+                publicKeyPath: nil,
+                passphrase: secret(for: passphraseID)
+            ))
+        }
+        return SSHAuthMethod(kind: .agent)
+    }
+
+    /// Reads a Keychain secret, treating an empty value as absent.
+    private func secret(for id: UUID?) -> String? {
+        guard let id, let value = secrets.secret(for: id), !value.isEmpty else { return nil }
+        return value
+    }
+
+    // MARK: - Key passphrases
+
+    /// Whether the node itself holds a passphrase reference.
+    func definesPassphrase(for id: UUID, jump: Bool) -> Bool {
+        guard let node = tree.node(id: id) else { return false }
+        return (jump ? node.jumpKeyPassphraseID : node.keyPassphraseID) != nil
+    }
+
+    /// Whether a usable passphrase is available, including from a parent folder.
+    func hasEffectivePassphrase(for id: UUID, jump: Bool) -> Bool {
+        guard let resolved = tree.resolve(id: id) else { return false }
+        let reference = jump ? resolved.jump?.keyPassphraseID : resolved.keyPassphraseID
+        return secret(for: reference) != nil
+    }
+
+    /// Stores a passphrase in the Keychain and references it from the node.
+    func setPassphrase(_ passphrase: String, for id: UUID, jump: Bool) {
+        guard let node = tree.node(id: id) else { return }
+        let existing = jump ? node.jumpKeyPassphraseID : node.keyPassphraseID
+        let secretID = existing ?? UUID()
+
+        do {
+            try secrets.setSecret(passphrase, for: secretID)
+        } catch {
+            Self.showError("Could not store the passphrase", error.localizedDescription)
+            return
+        }
+
+        update(id: id) { node in
+            if jump {
+                node.jumpKeyPassphraseID = secretID
+            } else {
+                node.keyPassphraseID = secretID
+            }
+        }
+    }
+
+    /// Removes the node's own passphrase, from both the tree and the Keychain.
+    func clearPassphrase(for id: UUID, jump: Bool) {
+        guard let node = tree.node(id: id) else { return }
+        let existing = jump ? node.jumpKeyPassphraseID : node.keyPassphraseID
+        if let existing { try? secrets.removeSecret(for: existing) }
+
+        update(id: id) { node in
+            if jump {
+                node.jumpKeyPassphraseID = nil
+            } else {
+                node.keyPassphraseID = nil
+            }
+        }
     }
 
     // MARK: - Import
@@ -169,8 +250,34 @@ final class ConnectionLibrary: ObservableObject {
     private func merge(_ imported: ConnectionTree) {
         guard !imported.roots.isEmpty else { return }
         var merged = tree
-        merged.roots.append(contentsOf: imported.roots)
+        // Fresh ids so an import can never collide with what is already there.
+        merged.roots.append(contentsOf: imported.regeneratedIDs().roots)
         tree = merged
+    }
+
+    /// Presents an open panel and merges a connections JSON file.
+    @discardableResult
+    func importJSONFromPanel() -> Int? {
+        let panel = NSOpenPanel()
+        panel.title = "Open connections file"
+        panel.message = "Choose a connections JSON file."
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        if let json = UTType(filenameExtension: "json") {
+            panel.allowedContentTypes = [json]
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let imported = try JSONDecoder().decode(ConnectionTree.self, from: data)
+            merge(imported)
+            save()
+            return imported.allConnections().count
+        } catch {
+            Self.showError("Import failed", error.localizedDescription)
+            return nil
+        }
     }
 
     // MARK: - Prompts

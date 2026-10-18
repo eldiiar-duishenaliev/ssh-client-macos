@@ -1,0 +1,77 @@
+{
+  "version" : 1,
+  "roots" : [
+    {
+      "id" : "A1000000-0000-4000-8000-000000000001",
+      "kind" : "folder",
+      "name" : "Example",
+      "isExpanded" : true,
+      "children" : [
+        {
+          "id" : "A1000000-0000-4000-8000-000000000002",
+          "kind" : "connection",
+          "name" : "bastion",
+          "host" : "203.0.113.10",
+          "username" : "root",
+          "protocolKind" : "ssh",
+          "privateKeyPath" : "~/.ssh/bastion_key",
+          "isExpanded" : true,
+          "children" : [],
+          "notes" : "ssh root@203.0.113.10 -i ~/.ssh/bastion_key"
+        },
+        {
+          "id" : "A1000000-0000-4000-8000-000000000003",
+          "kind" : "folder",
+          "name" : "via bastion (jump)",
+          "username" : "root",
+          "protocolKind" : "ssh",
+          "privateKeyPath" : "~/.ssh/bastion_key",
+          "jumpHost" : "203.0.113.10",
+          "jumpUsername" : "root",
+          "jumpPort" : 22,
+          "jumpPrivateKeyPath" : "~/.ssh/bastion_key",
+          "isExpanded" : true,
+          "notes" : "Everything below is tunnelled through the bastion via ProxyJump.",
+          "children" : [
+            {
+              "id" : "A1000000-0000-4000-8000-000000000004",
+              "kind" : "connection",
+              "name" : "app",
+              "host" : "10.0.0.11",
+              "username" : "root",
+              "protocolKind" : "ssh",
+              "privateKeyPath" : "~/.ssh/bastion_key",
+              "isExpanded" : true,
+              "children" : [],
+              "notes" : "ssh -i ~/.ssh/bastion_key -J root@203.0.113.10 root@10.0.0.11"
+            },
+            {
+              "id" : "A1000000-0000-4000-8000-000000000005",
+              "kind" : "connection",
+              "name" : "data",
+              "host" : "10.0.0.12",
+              "username" : "root",
+              "protocolKind" : "ssh",
+              "privateKeyPath" : "~/.ssh/bastion_key",
+              "isExpanded" : true,
+              "children" : [],
+              "notes" : "ssh -i ~/.ssh/bastion_key -J root@203.0.113.10 root@10.0.0.12"
+            },
+            {
+              "id" : "A1000000-0000-4000-8000-000000000006",
+              "kind" : "connection",
+              "name" : "identity",
+              "host" : "10.0.0.13",
+              "username" : "root",
+              "protocolKind" : "ssh",
+              "privateKeyPath" : "~/.ssh/bastion_key",
+              "isExpanded" : true,
+              "children" : [],
+              "notes" : "ssh -i ~/.ssh/bastion_key -J root@203.0.113.10 root@10.0.0.13"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

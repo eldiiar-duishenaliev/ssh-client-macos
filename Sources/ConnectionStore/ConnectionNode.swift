@@ -46,8 +46,21 @@ public struct ConnectionNode: Identifiable, Codable, Equatable, Sendable {
     public var username: String?
     public var protocolKind: ProtocolKind?
     public var privateKeyPath: String?
-    /// Reference to a Keychain-stored secret. Added in phase 3.
+    /// Reference to a Keychain-stored password. Added in phase 3.
     public var credentialID: UUID?
+    /// Reference to the Keychain-stored passphrase for `privateKeyPath`.
+    /// Passphrases are secrets, so they are never written to the JSON tree.
+    public var keyPassphraseID: UUID?
+
+    // Jump host ("ProxyJump"), also inheritable so a folder can carry a
+    // shared bastion for everything beneath it.
+    public var jumpHost: String?
+    public var jumpPort: UInt16?
+    public var jumpUsername: String?
+    public var jumpPrivateKeyPath: String?
+    public var jumpCredentialID: UUID?
+    /// Keychain reference to the passphrase for `jumpPrivateKeyPath`.
+    public var jumpKeyPassphraseID: UUID?
 
     // Presentation.
     public var notes: String?
@@ -66,6 +79,13 @@ public struct ConnectionNode: Identifiable, Codable, Equatable, Sendable {
         protocolKind: ProtocolKind? = nil,
         privateKeyPath: String? = nil,
         credentialID: UUID? = nil,
+        keyPassphraseID: UUID? = nil,
+        jumpHost: String? = nil,
+        jumpPort: UInt16? = nil,
+        jumpUsername: String? = nil,
+        jumpPrivateKeyPath: String? = nil,
+        jumpCredentialID: UUID? = nil,
+        jumpKeyPassphraseID: UUID? = nil,
         notes: String? = nil,
         colorHex: String? = nil,
         isExpanded: Bool = true,
@@ -80,6 +100,13 @@ public struct ConnectionNode: Identifiable, Codable, Equatable, Sendable {
         self.protocolKind = protocolKind
         self.privateKeyPath = privateKeyPath
         self.credentialID = credentialID
+        self.keyPassphraseID = keyPassphraseID
+        self.jumpHost = jumpHost
+        self.jumpPort = jumpPort
+        self.jumpUsername = jumpUsername
+        self.jumpPrivateKeyPath = jumpPrivateKeyPath
+        self.jumpCredentialID = jumpCredentialID
+        self.jumpKeyPassphraseID = jumpKeyPassphraseID
         self.notes = notes
         self.colorHex = colorHex
         self.isExpanded = isExpanded
@@ -87,6 +114,39 @@ public struct ConnectionNode: Identifiable, Codable, Equatable, Sendable {
     }
 
     public var isFolder: Bool { kind == .folder }
+
+    /// Whether this node (ignoring inheritance) defines a jump host.
+    public var definesJumpHost: Bool {
+        if let jumpHost, !jumpHost.isEmpty { return true }
+        return false
+    }
+}
+
+/// The bastion a connection is tunnelled through.
+public struct ResolvedJump: Equatable, Sendable {
+    public var host: String
+    public var port: UInt16
+    public var username: String
+    public var privateKeyPath: String?
+    public var credentialID: UUID?
+    /// Keychain reference to the passphrase for `privateKeyPath`.
+    public var keyPassphraseID: UUID?
+
+    public init(
+        host: String,
+        port: UInt16 = 22,
+        username: String,
+        privateKeyPath: String? = nil,
+        credentialID: UUID? = nil,
+        keyPassphraseID: UUID? = nil
+    ) {
+        self.host = host
+        self.port = port
+        self.username = username
+        self.privateKeyPath = privateKeyPath
+        self.credentialID = credentialID
+        self.keyPassphraseID = keyPassphraseID
+    }
 }
 
 /// A connection with all inherited values resolved.
@@ -98,6 +158,10 @@ public struct ResolvedConnection: Equatable, Sendable {
     public var protocolKind: ProtocolKind
     public var privateKeyPath: String?
     public var credentialID: UUID?
+    /// Keychain reference to the passphrase for `privateKeyPath`.
+    public var keyPassphraseID: UUID?
+    /// Present when the connection should be tunnelled through a bastion.
+    public var jump: ResolvedJump?
 
     public init(
         name: String,
@@ -106,7 +170,9 @@ public struct ResolvedConnection: Equatable, Sendable {
         username: String,
         protocolKind: ProtocolKind,
         privateKeyPath: String? = nil,
-        credentialID: UUID? = nil
+        credentialID: UUID? = nil,
+        keyPassphraseID: UUID? = nil,
+        jump: ResolvedJump? = nil
     ) {
         self.name = name
         self.host = host
@@ -115,5 +181,13 @@ public struct ResolvedConnection: Equatable, Sendable {
         self.protocolKind = protocolKind
         self.privateKeyPath = privateKeyPath
         self.credentialID = credentialID
+        self.keyPassphraseID = keyPassphraseID
+        self.jump = jump
+    }
+
+    /// Short description of the route, e.g. `root@bastion → app`.
+    public var routeDescription: String {
+        guard let jump else { return "\(username)@\(host):\(port)" }
+        return "\(jump.username)@\(jump.host) → \(username)@\(host):\(port)"
     }
 }

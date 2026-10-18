@@ -29,6 +29,8 @@ forwarding.
 Scripts/bundle.sh          # build + assemble + ad-hoc sign dist/SSHClientMac.app
 Scripts/run.sh             # bundle and launch
 Scripts/test.sh            # run the test suite
+Scripts/make-icon.sh       # regenerate Resources/AppIcon.icns
+Scripts/make-fixtures.py   # regenerate the mRemoteNG test fixtures
 swift build                # plain SwiftPM build
 ```
 
@@ -38,9 +40,9 @@ swift build                # plain SwiftPM build
 |---|---|
 | `Clibssh2` | `systemLibrary` modulemap over Homebrew's libssh2 |
 | `CCrypto` | C shim over OpenSSL (AES-GCM, PBKDF2, MD5) for the importer |
-| `SSHCore` | sessions, auth, known_hosts, PTY, channels |
+| `SSHCore` | sessions, auth, known_hosts, PTY, channels, jump hosts |
 | `SFTPCore` | SFTP subsystem client |
-| `ForwardingKit` | `-L` / `-R` / `-D` forwarding, jump hosts |
+| `ForwardingKit` | `-L` / `-R` / `-D` forwarding |
 | `ConnectionStore` | connection/folder models, inheritance, persistence, importers |
 | `CredentialKit` | Keychain secrets, SSH key management |
 | `TerminalKit` | SwiftTerm terminal bridge |
@@ -54,9 +56,10 @@ SSH/SFTP/tunnels use `libssh2`.
 - **P0** Scaffold & toolchain ✅
 - **P1** SSH terminal core — auth, host-key verification, session tabs ✅
 - **P2** Connection tree, properties, quick connect, persistence, `confCons.xml` import ✅
-- **P3** Keychain credentials UI, folder inheritance editor, SSH key manager
-- **P4** SFTP browser, port forwarding, jump hosts, logging, snippets
-- **P5** Polish, signing, tests
+- **P3** Jump hosts (`ProxyJump`) ✅ · app icon ✅
+- **P4** Keychain credential UI, SSH key manager
+- **P5** SFTP browser, `-L` / `-R` / `-D` forwarding
+- **P6** Polish, signing, release
 
 ## Usage
 
@@ -76,9 +79,39 @@ supported, as is full-file encryption. If the file has a master password you
 are prompted for it. Decrypted passwords are moved into the Keychain, so the
 imported connections can be opened directly.
 
+**Keys and passphrases.** Each connection and each jump host has its own key
+path (*Private key* / *Jump key*) and its own passphrase. Passphrases are
+secrets, so the inspector shows a **Set… / Clear** control rather than a text
+field, and the value goes into the macOS Keychain — the connections file only
+ever stores a reference. Like every other property, a passphrase can be set
+once on a folder and inherited.
+
+**Jump hosts (ProxyJump).** A connection can be tunnelled through a bastion by
+filling in *Jump host* / *Jump port* / *Jump user* / *Jump key* in the
+properties inspector. Jump settings are inherited like every other property, so
+the usual arrangement is one folder holding the bastion and its children
+pointing at internal hosts — the equivalent of `ssh -J root@bastion host`.
+
+The client opens a `direct-tcpip` channel on the bastion and runs the real
+session over it, so the bastion sees an ordinary port-forward. Both the
+bastion's and the target's host keys are verified against `known_hosts`.
+
+**Example file.** `Examples/jump-host.json` holds a worked jump-host setup
+(a documentation IP range, not a real host). Import it with
+**Import → Connections JSON…** in the toolbar.
+
 **Sessions.** Double-click a connection to open a terminal tab, or press **⌘N**
 to quick-connect to a host without saving it. Host keys are verified against
 `~/.ssh/known_hosts`; an unknown or changed key prompts before connecting.
+
+## App icon
+
+`Resources/AppIcon.icns` is generated, not hand-drawn: run
+`Scripts/make-icon.sh` to rebuild it. The artwork is a rounded tile with an
+indigo→cyan gradient carrying a white `>_` terminal prompt, with a dotted hop
+arc and two nodes above it standing for reaching a host through a bastion.
+`Scripts/make-icon.swift` draws it with Core Graphics at 1024px, and `sips` +
+`iconutil` pack the required sizes.
 
 ## Command Line Tools notes
 

@@ -1,17 +1,29 @@
 import SwiftUI
+import AppKit
 import ConnectionStore
 
 /// Editable copy of a node's properties, so edits can be reviewed before they
 /// are written back to the library.
+///
+/// Passphrases are deliberately absent: they are secrets, stored in the
+/// Keychain and managed with the Set/Clear controls rather than text fields.
 @MainActor
 final class NodeEditor: ObservableObject {
     @Published var name = ""
     @Published var host = ""
     @Published var port = ""
     @Published var username = ""
+    @Published var privateKeyPath = ""
     @Published var protocolKind: ProtocolKind = .ssh
     @Published var notes = ""
     @Published var isFolder = false
+
+    // Jump host ("ProxyJump"). Empty values clear the override so the value is
+    // inherited from a parent folder again.
+    @Published var jumpHost = ""
+    @Published var jumpPort = ""
+    @Published var jumpUsername = ""
+    @Published var jumpPrivateKeyPath = ""
 
     private(set) var nodeID: UUID?
 
@@ -25,9 +37,14 @@ final class NodeEditor: ObservableObject {
         host = node.host ?? ""
         port = node.port.map(String.init) ?? ""
         username = node.username ?? ""
+        privateKeyPath = node.privateKeyPath ?? ""
         protocolKind = node.protocolKind ?? .ssh
         notes = node.notes ?? ""
         isFolder = node.isFolder
+        jumpHost = node.jumpHost ?? ""
+        jumpPort = node.jumpPort.map(String.init) ?? ""
+        jumpUsername = node.jumpUsername ?? ""
+        jumpPrivateKeyPath = node.jumpPrivateKeyPath ?? ""
     }
 
     /// Writes the edited values back. Empty text clears an override so the
@@ -35,14 +52,20 @@ final class NodeEditor: ObservableObject {
     func apply(to library: ConnectionLibrary) {
         guard let nodeID else { return }
         library.update(id: nodeID) { node in
-            node.name = name.trimmingCharacters(in: .whitespaces).isEmpty
-                ? node.name
-                : name.trimmingCharacters(in: .whitespaces)
+            let trimmedName = name.trimmingCharacters(in: .whitespaces)
+            if !trimmedName.isEmpty { node.name = trimmedName }
+
             node.host = Self.cleared(host)
             node.port = UInt16(port)
             node.username = Self.cleared(username)
+            node.privateKeyPath = Self.cleared(privateKeyPath)
             node.protocolKind = protocolKind
             node.notes = Self.cleared(notes)
+
+            node.jumpHost = Self.cleared(jumpHost)
+            node.jumpPort = UInt16(jumpPort)
+            node.jumpUsername = Self.cleared(jumpUsername)
+            node.jumpPrivateKeyPath = Self.cleared(jumpPrivateKeyPath)
         }
     }
 
@@ -65,7 +88,7 @@ struct PropertiesInspectorView: View {
                 placeholder
             }
         }
-        .frame(minWidth: 280)
+        .frame(minWidth: 300)
         .onAppear { editor.load(selectedNode) }
         .onChange(of: library.selectedID) { _, _ in editor.load(selectedNode) }
     }
@@ -102,18 +125,36 @@ struct PropertiesInspectorView: View {
                                 Text(kind.rawValue.uppercased()).tag(kind)
                             }
                         }
+
+                        TextField("Private key", text: $editor.privateKeyPath)
+                        keyPassphraseRow(for: node, jump: false)
                     }
                 }
 
-                Section {
+                Section("Jump host (ProxyJump)") {
+                    TextField("Jump host", text: $editor.jumpHost)
+                    TextField("Jump port", text: $editor.jumpPort)
+                    TextField("Jump user", text: $editor.jumpUsername)
+                    TextField("Jump key", text: $editor.jumpPrivateKeyPath)
+                    keyPassphraseRow(for: node, jump: true)
+
+                    Text(jumpHint(for: node))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Notes") {
                     TextField("Notes", text: $editor.notes, axis: .vertical)
                         .lineLimit(2...6)
                 }
 
-                Section("Inheritance") {
-                    Text(explanation(for: node))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                if !editor.isFolder {
+                    Section("Effective") {
+                        Text(effectiveDescription(for: node))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
                 }
             }
             .formStyle(.grouped)
@@ -130,13 +171,88 @@ struct PropertiesInspectorView: View {
         }
     }
 
-    private func explanation(for node: ConnectionNode) -> String {
-        guard let id = library.selectedID, let resolved = library.resolve(id) else {
+    // MARK: - Passphrase controls
+
+    /// The key passphrase is a secret, so it is set and cleared rather than
+    /// typed into the tree.
+    @ViewBuilder
+    private func keyPassphraseRow(for node: ConnectionNode, jump: Bool) -> some View {
+        let info = passphraseInfo(for: node, jump: jump)
+
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Text("Passphrase")
+                Spacer()
+                Text(info.state)
+                    .foregroundStyle(info.isSet ? Color.secondary : Color.secondary)
+                Button("Set…") { setPassphrase(for: node, jump: jump) }
+                    .controlSize(.small)
+                if library.definesPassphrase(for: node.id, jump: jump) {
+                    Button("Clear") { library.clearPassphrase(for: node.id, jump: jump) }
+                        .controlSize(.small)
+                }
+            }
+            Text(info.hint)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func passphraseInfo(for node: ConnectionNode, jump: Bool) -> (state: String, hint: String, isSet: Bool) {
+        if library.definesPassphrase(for: node.id, jump: jump) {
+            return ("Set", "Stored in the macOS Keychain for this item.", true)
+        }
+        if library.hasEffectivePassphrase(for: node.id, jump: jump) {
+            return ("Inherited", "Set on a parent folder; edit it there to change it.", true)
+        }
+        return ("Not set", "Only needed when the key file is encrypted.", false)
+    }
+
+    private func setPassphrase(for node: ConnectionNode, jump: Bool) {
+        guard let passphrase = promptForPassphrase(isJump: jump) else { return }
+        library.setPassphrase(passphrase, for: node.id, jump: jump)
+    }
+
+    private func promptForPassphrase(isJump: Bool) -> String? {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = isJump ? "Jump key passphrase" : "Private key passphrase"
+        alert.informativeText = "The passphrase is stored in the macOS Keychain, not in the connections file."
+
+        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.placeholderString = "Passphrase"
+        alert.accessoryView = field
+
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        let value = field.stringValue
+        return value.isEmpty ? nil : value
+    }
+
+    // MARK: - Hints
+
+    private func jumpHint(for node: ConnectionNode) -> String {
+        if node.definesJumpHost {
+            return "Defined on this item."
+        }
+        if let resolved = library.resolve(node.id), resolved.jump != nil {
+            return "Inherited from a parent folder."
+        }
+        return "Empty: connects directly, with no bastion."
+    }
+
+    private func effectiveDescription(for node: ConnectionNode) -> String {
+        guard let resolved = library.resolve(node.id) else {
             return "Set a host to make this connection usable."
         }
-        var parts = ["Effective: \(resolved.username)@\(resolved.host):\(resolved.port)"]
-        if node.host == nil { parts.append("Host is empty, so this node is not connectable on its own.") }
-        else if node.port == nil { parts.append("Port is inherited from the parent folder.") }
+        var parts = ["Route: \(resolved.routeDescription)"]
+        if node.host == nil {
+            parts.append("Host is empty, so this item is not connectable on its own.")
+        } else if node.port == nil {
+            parts.append("Port is inherited from the parent folder.")
+        }
         return parts.joined(separator: "\n")
     }
 }

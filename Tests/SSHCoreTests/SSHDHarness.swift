@@ -5,26 +5,48 @@ import Darwin
 /// exercised end to end. Only public-key auth is enabled, against a temporary
 /// `authorized_keys` file, so the machine's real SSH configuration is
 /// untouched.
+///
+/// Two instances can be started at once to test tunnelling through a bastion.
 final class SSHDHarness {
     let directory: URL
     let port: UInt16
     let hostKeyPath: String
     let clientKeyPath: String
     let knownHostsPath: String
+    let logPath: String
+    /// The passphrase the generated client key was encrypted with, if any.
+    let clientKeyPassphrase: String?
 
     private let process: Process
+    private let logHandle: FileHandle
 
-    private init(directory: URL, port: UInt16, hostKeyPath: String, clientKeyPath: String, knownHostsPath: String, process: Process) {
+    private init(
+        directory: URL,
+        port: UInt16,
+        hostKeyPath: String,
+        clientKeyPath: String,
+        knownHostsPath: String,
+        logPath: String,
+        clientKeyPassphrase: String?,
+        process: Process,
+        logHandle: FileHandle
+    ) {
         self.directory = directory
         self.port = port
         self.hostKeyPath = hostKeyPath
         self.clientKeyPath = clientKeyPath
         self.knownHostsPath = knownHostsPath
+        self.logPath = logPath
+        self.clientKeyPassphrase = clientKeyPassphrase
         self.process = process
+        self.logHandle = logHandle
     }
 
     /// Returns `nil` when `sshd`/`ssh-keygen` are unavailable.
-    static func start() throws -> SSHDHarness? {
+    ///
+    /// - Parameter keyPassphrase: when set, the generated client key is
+    ///   encrypted with it, so authentication needs the passphrase.
+    static func start(logLevel: String = "INFO", keyPassphrase: String? = nil) throws -> SSHDHarness? {
         let sshd = "/usr/sbin/sshd"
         let keygen = "/usr/bin/ssh-keygen"
         let fileManager = FileManager.default
@@ -43,13 +65,17 @@ final class SSHDHarness {
         let configPath = directory.appendingPathComponent("sshd_config").path
 
         try run(keygen, ["-t", "ed25519", "-f", hostKey, "-N", "", "-q"])
-        try run(keygen, ["-t", "ed25519", "-f", clientKey, "-N", "", "-q"])
+        try run(keygen, ["-t", "ed25519", "-f", clientKey, "-N", keyPassphrase ?? "", "-q"])
 
         let publicKey = try String(contentsOfFile: clientKey + ".pub", encoding: .utf8)
         try publicKey.write(toFile: authorizedKeys, atomically: true, encoding: .utf8)
         try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: authorizedKeys)
 
         let port = freePort()
+        guard port > 0 else {
+            throw SSHDHarnessError.setup("could not allocate a free port")
+        }
+
         let config = """
         Port \(port)
         ListenAddress 127.0.0.1
@@ -61,20 +87,23 @@ final class SSHDHarness {
         UsePAM no
         StrictModes no
         PrintMotd no
+        LogLevel \(logLevel)
         PidFile \(directory.appendingPathComponent("sshd.pid").path)
         """
-
-        guard port > 0 else {
-            throw SSHDHarnessError.setup("could not allocate a free port")
-        }
-
         try config.write(toFile: configPath, atomically: true, encoding: .utf8)
+
+        // sshd with -e logs to stderr; capture it so tests can inspect it.
+        let logPath = directory.appendingPathComponent("sshd.log").path
+        fileManager.createFile(atPath: logPath, contents: nil)
+        guard let logHandle = FileHandle(forWritingAtPath: logPath) else {
+            throw SSHDHarnessError.setup("could not open the sshd log for writing")
+        }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: sshd)
         process.arguments = ["-f", configPath, "-D", "-e"]
         process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        process.standardError = logHandle
         try process.run()
 
         let knownHosts = directory.appendingPathComponent("known_hosts").path
@@ -84,7 +113,10 @@ final class SSHDHarness {
             hostKeyPath: hostKey,
             clientKeyPath: clientKey,
             knownHostsPath: knownHosts,
-            process: process
+            logPath: logPath,
+            clientKeyPassphrase: keyPassphrase,
+            process: process,
+            logHandle: logHandle
         )
 
         guard harness.waitForPort(timeout: 10) else {
@@ -96,7 +128,13 @@ final class SSHDHarness {
 
     func stop() {
         if process.isRunning { process.terminate() }
+        try? logHandle.close()
         try? FileManager.default.removeItem(at: directory)
+    }
+
+    /// The sshd log written so far.
+    func logContents() -> String {
+        (try? String(contentsOfFile: logPath, encoding: .utf8)) ?? ""
     }
 
     private func waitForPort(timeout: TimeInterval) -> Bool {

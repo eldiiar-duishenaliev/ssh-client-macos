@@ -49,12 +49,17 @@ struct ContentView: View {
         }
 
         ToolbarItem(placement: .primaryAction) {
-            Button {
-                library.importFromPanel()
+            Menu {
+                Button("mRemoteNG file (confCons.xml)…") {
+                    library.importFromPanel()
+                }
+                Button("Connections JSON…") {
+                    library.importJSONFromPanel()
+                }
             } label: {
                 Label("Import", systemImage: "square.and.arrow.down")
             }
-            .help("Import an mRemoteNG confCons.xml file")
+            .help("Import connections from mRemoteNG or a connections JSON file")
         }
 
         ToolbarItem(placement: .primaryAction) {
